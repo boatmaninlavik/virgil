@@ -141,3 +141,13 @@ gcloud storage cp data/ciks.json   "$BUCKET/data/ciks.json"   --content-type=app
   "$BUCKET/data/congress-trades.json" --content-type=application/json --quiet 2>/dev/null
 cp data/.content_hash data/.synced_hash 2>/dev/null
 echo "$(date -u +%FT%TZ) synced -> $BUCKET ($NEW_HASH)"
+
+# Push the same build to Vercel when it is configured. Silent no-op otherwise,
+# so the local-only setup keeps working exactly as before.
+if [[ -d .vercel ]] && command -v vercel >/dev/null 2>&1; then
+  if ./deploy.sh >> data/deploy.log 2>&1; then
+    echo "$(date -u +%FT%TZ) deployed to vercel"
+  else
+    echo "$(date -u +%FT%TZ) vercel deploy failed (see data/deploy.log)"
+  fi
+fi
