@@ -1,0 +1,22 @@
+# Generated site payload. Rebuilt from data/ on every poll cycle and several MB
+# a day of churn, so it is deployed straight to Vercel rather than committed —
+# a year of index.html alone would be a few GB of git objects.
+ui/index.html
+ui/data/
+ui/_smoke.html
+
+# Ingest working set: caches, per-filing scans, price history. Rebuildable from
+# EDGAR, and the large caches already live in GCS (see ingest/store.py).
+data/
+
+# Never: API keys live in ~/.virgil/credentials, outside the tree.
+.virgil/
+*.key
+.env
+.env.*
+
+.DS_Store
+__pycache__/
+*.pyc
+*.tmp
+.vercel/
