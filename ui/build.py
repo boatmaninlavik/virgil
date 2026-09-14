@@ -2153,7 +2153,8 @@ document.addEventListener("visibilitychange", () => {
 """
 
 
-def build(interval_label="60s", reload_seconds=60):
+def build(interval_label="60s", reload_seconds=60, data_only=False,
+          live_only=False):
     events = load("events.json", [])
     # 13D/G rows carry an issuer CIK but no ticker, so they could not be
     # expanded like every other row. Map CIK -> ticker from SEC's own file.
@@ -2243,6 +2244,21 @@ def build(interval_label="60s", reload_seconds=60):
     fund_history = load("fund_history.json", {})
     quotes = (load("quotes.json", {}) or {}).get("quotes", {})
     quote_meta = load("quotes.json", {}) or {}
+
+    if live_only:
+        # Everything below loads the 44 MB of holdings and rewrites every
+        # per-ticker and per-fund block — none of which changes when a filing
+        # lands. The three inputs readers actually poll are ready here.
+        side = os.path.join(ROOT, "ui", "data")
+        os.makedirs(side, exist_ok=True)
+        built = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        json.dump({"built": built, "events": events, "clusters": clusters,
+                   "quotes": quotes},
+                  open(os.path.join(side, "live.json"), "w"), separators=(",", ":"))
+        json.dump({"built": built, "events": len(events)},
+                  open(os.path.join(side, "live-meta.json"), "w"),
+                  separators=(",", ":"))
+        return None, {"events": len(events), "hash": "live"}
     firm_logos = load("firm_logos.json", {})
     fund_logos = load("fund_logos.json", {})
     # A partnership entry (Optiver, Jane Street) has no principal to photograph,
@@ -2546,11 +2562,28 @@ def build(interval_label="60s", reload_seconds=60):
                                  % (i, r.stderr[:600]))
 
     out = os.path.join(ROOT, "ui", "index.html")
+    if data_only:
+        # The frequent cycle only refreshes what readers fetch from storage —
+        # the page's own code is unchanged, so rewriting and republishing it
+        # every few minutes buys nothing and costs a render check, a commit and
+        # a deploy each time.
+        return None, meta
     open(out, "w").write(html)
     return out, meta
 
 
 if __name__ == "__main__":
-    out, meta = build()
-    print(f"built {out}  ({os.path.getsize(out)/1024:.0f} KB, {meta['events']} events, "
-          f"hash {meta['hash']})")
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data-only", action="store_true",
+                    help="refresh data/ for the live page; leave index.html alone")
+    ap.add_argument("--live-only", action="store_true",
+                    help="only the blocks readers poll; skip the daily shards")
+    a = ap.parse_args()
+    out, meta = build(data_only=a.data_only or a.live_only, live_only=a.live_only)
+    if out:
+        print(f"built {out}  ({os.path.getsize(out)/1024:.0f} KB, "
+              f"{meta['events']} events, hash {meta['hash']})")
+    else:
+        print(f"data refreshed ({meta['events']} events, hash {meta['hash']}) "
+              f"- page untouched")
