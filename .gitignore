@@ -1,7 +1,7 @@
-# Generated site payload. Rebuilt from data/ on every poll cycle and several MB
-# a day of churn, so it is deployed straight to Vercel rather than committed —
-# a year of index.html alone would be a few GB of git objects.
-ui/index.html
+# The sharded data tree is 62 MB and is rebuilt every cycle, so it lives in
+# object storage (gs://virgil-web) rather than in git — committing it would add
+# megabytes of objects a day. The page itself is committed, so pushing here is
+# what deploys the site.
 ui/data/
 ui/_smoke.html
 
@@ -20,3 +20,4 @@ __pycache__/
 *.pyc
 *.tmp
 .vercel/
+.vercel

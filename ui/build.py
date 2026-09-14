@@ -1095,11 +1095,20 @@ function renderTickerLite(e){
 const FILE_PROTO = location.protocol === "file:";
 const _pending = {};
 
+// The sharded data is 62 MB and rebuilt every cycle, so it is served from
+// object storage rather than committed alongside the page — the repo would
+// otherwise grow by megabytes a day. Locally it still comes from disk, so
+// development needs no network and no bucket.
+const DATA_BASE = (location.hostname === "localhost" ||
+                   location.hostname === "127.0.0.1" || FILE_PROTO)
+  ? "" : "https://storage.googleapis.com/virgil-web/";
+
 async function loadJSON(path){
   if(_pending[path] !== undefined) return _pending[path];
   if(FILE_PROTO){ _pending[path] = null; return null; }
   try{
-    const r = await fetch(path, {credentials: "same-origin"});
+    const url = DATA_BASE ? DATA_BASE + path : path;
+    const r = await fetch(url, DATA_BASE ? {} : {credentials: "same-origin"});
     _pending[path] = r.ok ? await r.json() : null;
   }catch(e){ _pending[path] = null; }
   return _pending[path];

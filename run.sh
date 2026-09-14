@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 BUCKET="gs://virgil-edgar"
+WEB_BUCKET="gs://virgil-web"   # public, CORS-locked; serves the page's data
 PY="${PY:-python3}"
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
@@ -122,6 +123,10 @@ if [[ "$NEW_HASH" == "$OLD_HASH" && "${FORCE_SYNC:-0}" != "1" ]]; then
 fi
 
 [[ -d ui/data ]] && gcloud storage cp -r -Z ui/data "$BUCKET/" --quiet 2>/dev/null
+# Public copy the deployed page reads from: the repo carries index.html only,
+# so the sharded blocks have to be reachable over HTTP from the live domain.
+[[ -d ui/data ]] && gcloud storage rsync -r -c ui/data "$WEB_BUCKET/data" \
+  --quiet 2>/dev/null || true
 gcloud storage cp ui/index.html "$BUCKET/index.html" \
   --content-type=text/html \
   --cache-control="no-cache, max-age=0" --quiet

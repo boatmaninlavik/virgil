@@ -13,8 +13,15 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 if ! command -v vercel >/dev/null; then
   echo "vercel CLI not installed: brew install vercel-cli" >&2; exit 1
 fi
-if ! vercel whoami >/dev/null 2>&1; then
-  echo "not logged in: run 'vercel login' once" >&2; exit 1
+# Token lives in ~/.virgil/credentials, outside the tree, so it is never
+# committed and the unattended poller can deploy without an interactive login.
+CREDS="$HOME/.virgil/credentials"
+TOKEN="$(grep -m1 '^VERCEL_TOKEN=' "$CREDS" 2>/dev/null | cut -d= -f2-)"
+if [[ -n "$TOKEN" ]]; then
+  set -- --token "$TOKEN" "$@"
+elif ! vercel whoami >/dev/null 2>&1; then
+  echo "no credentials: run 'vercel login', or add VERCEL_TOKEN to $CREDS" >&2
+  exit 1
 fi
 [[ -f ui/index.html ]] || { echo "nothing built yet - run ui/build.py" >&2; exit 1; }
 
