@@ -256,6 +256,17 @@ nav{display:flex;gap:7px;padding-bottom:20px;flex-wrap:wrap;align-items:center}
 .who-tbl tr:last-child td{border-bottom:none}
 .role{font-size:11.5px;color:var(--ink-3)}
 .chartwrap{margin:14px 0 4px}
+.chooser{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+.chooserlab{font:500 10.5px/1 var(--mono,ui-monospace);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3)}
+.pickbtn{display:flex;flex-direction:column;align-items:flex-start;gap:1px;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink);
+  border-radius:7px;padding:6px 11px;cursor:pointer;font:500 13px Inter,sans-serif;
+  text-align:left;transition:.15s}
+.pickbtn small{font-weight:400;font-size:11px;color:var(--ink-3)}
+.pickbtn:hover{border-color:var(--ink-3)}
+.pickbtn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.pickbtn.on small{color:var(--paper-2,#ccc)}
 .chartmsg{height:150px;display:grid;place-items:center;text-align:center;
   font-size:12.5px;color:var(--ink-3);padding:0 20px}
 .chart svg{display:block;overflow:visible}
@@ -810,6 +821,11 @@ function initCharts(){
 }
 
 document.addEventListener("click", ev => {
+  const pk = ev.target.closest("[data-pick]");
+  if(pk){
+    renderStock(pk.dataset.pick).then(() => initCharts());
+    return;
+  }
   const b = ev.target.closest(".rbtn");
   if(!b) return;
   const wrap = b.closest(".chartwrap");
@@ -848,14 +864,20 @@ function stockTable(rows, label){
 // "point 72", "Point-72" and "POINT72" are all the same fund to a person typing
 const sq = s => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
+// sq() strips spaces, so a substring test runs straight across word
+// boundaries: "gilbertcisneros" contains "tci", which offered a congressman
+// as a match for the hedge fund TCI. Compare against the words instead.
+function words(n){ return n.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean); }
+
 function findMember(q){
   const k = sq(q);
   if(!k || k.length < 3) return null;
   const names = Object.keys(MEMBERS);
+  const tok = w => names.find(n => words(n).some(w2 => w(w2)));
   return MEMBERS[names.find(n => sq(n) === k)]
-      || MEMBERS[names.find(n => sq(n).endsWith(k))]      // surname
+      || MEMBERS[tok(w => w === k)]                       // a whole name word
       || MEMBERS[names.find(n => sq(n).startsWith(k))]
-      || MEMBERS[names.find(n => sq(n).includes(k))]
+      || MEMBERS[k.length >= 4 ? tok(w => w.startsWith(k)) : undefined]
       || null;
 }
 
@@ -919,12 +941,16 @@ function findFund(q){
   if(!k) return null;
   const names = Object.keys(HOLDINGS);
   const person = n => sq(HOLDINGS[n].person);
+  // Same boundary problem as findMember: an unanchored substring match on the
+  // squashed string pairs queries with funds that merely contain the letters.
+  const anyWord = (get, test) => names.find(n => words(get(n)).some(test));
   return HOLDINGS[names.find(n => sq(n) === k)]
       || HOLDINGS[names.find(n => person(n) === k)]
       || HOLDINGS[names.find(n => sq(n).startsWith(k))]
       || HOLDINGS[names.find(n => person(n).startsWith(k))]
-      || HOLDINGS[names.find(n => sq(n).includes(k))]
-      || HOLDINGS[names.find(n => person(n).includes(k))]
+      || HOLDINGS[anyWord(n => n, w => w === k)]
+      || HOLDINGS[anyWord(n => HOLDINGS[n].person || "", w => w === k)]
+      || HOLDINGS[k.length >= 4 ? anyWord(n => n, w => w.startsWith(k)) : undefined]
       || null;
 }
 
@@ -1340,13 +1366,42 @@ function renderDiscover(){
   paintFollowCount();
 }
 
-async function renderStock(){
+// A name can belong to more than one thing. TCI is a hedge fund we track and
+// also the ticker for Transcontinental Realty Investors; Steve Cohen founded
+// Point72 and sits in Congress. Showing one and telling the reader to "search
+// the full name" for the other sent them somewhere that resolved right back
+// here, so both are offered instead and the reader picks.
+function chooserBar(opts, pick){
+  if(opts.length < 2) return "";
+  return `<div class="chooser">
+    <span class="chooserlab">Matches ${opts.length}</span>
+    ${opts.map(o => `<button class="pickbtn${o.kind === pick ? " on" : ""}"
+        data-pick="${o.kind}">${esc(o.label)}<small>${esc(o.sub)}</small></button>`).join("")}
+  </div>`;
+}
+
+async function renderStock(prefer){
   const el = document.getElementById("stockpanel");
   const key = query.trim().toUpperCase();
   if(!key){ el.innerHTML = ""; return; }
   if(TICKER_LIST.includes(key)) await ensureTickers(key);
   const d = STOCKS[key];
-  if(!d && TICKERS[key]){ renderTickerLite(TICKERS[key]); return; }
+  const lite = (!d && TICKERS[key]) ? TICKERS[key] : null;
+  const f = findFund(query), mem = findMember(query);
+
+  const opts = [];
+  if(d || lite) opts.push({kind:"stock", label:key,
+    sub:(d && d.name) || (lite && lite.n) || "stock"});
+  if(f) opts.push({kind:"fund", label:f.fund, sub:f.person || "fund"});
+  if(mem) opts.push({kind:"member", label:mem.member, sub:"member of Congress"});
+  const pick = (prefer && opts.some(o => o.kind === prefer)) ? prefer
+             : (opts[0] ? opts[0].kind : null);
+  const bar = () => { if(opts.length > 1)
+      el.insertAdjacentHTML("afterbegin", chooserBar(opts, pick)); };
+
+  if(pick === "fund" && f){ renderFund(f); bar(); return; }
+  if(pick === "member" && mem){ renderMember(mem); bar(); return; }
+  if(!d && lite){ renderTickerLite(lite); bar(); return; }
   if(!d && TICKER_LIST.includes(key) && FILE_PROTO){
     el.innerHTML = `<div class="stock"><h3>${esc(key)}</h3>
       <div class="sub">This ticker is indexed — the page just cannot load its data
@@ -1354,17 +1409,15 @@ async function renderStock(){
     return;
   }
   if(!d){
-    const f = findFund(query), mem = findMember(query);
-    // "Steve Cohen" is both the Point72 founder and a sitting congressman
-    const both = f && mem;
-    if(f){ renderFund(f); if(both) noteAlt("member", mem.member); return; }
-    if(mem){ renderMember(mem); return; }
+    if(f){ renderFund(f); bar(); return; }
+    if(mem){ renderMember(mem); bar(); return; }
     el.innerHTML = `<div class="stock"><h3>${esc(key)}</h3>
       <div class="sub" id="addsub">Not tracked yet.</div>
       <div id="addbox" style="margin-top:14px"></div></div>`;
     offerToAdd(key);
     return;
   }
+  const _afterStock = bar;   // run once the panel below has been written
   const s = d.summary, buys = aggregateBy(d.trades, "buy"), sells = aggregateBy(d.trades, "sell");
   const disc = d.trades.filter(t => !t.rule_10b5_1).length;
   const r = d.recency || {};
@@ -1448,6 +1501,7 @@ async function renderStock(){
         <td class="num">${fmtUSD(p.value)||"—"}</td>
         <td class="num" style="color:var(--ink-3)">filed ${p.filed}</td></tr>`).join("")}</tbody></table>` : ""}
   </div>`;
+  _afterStock();
 }
 
 function matches(e){
@@ -1870,7 +1924,9 @@ async function offerToAdd(q){
     const k = known[0];
     sub.textContent = "Already tracked.";
     box.innerHTML = `<div class="nores"><b>${esc(k.name)}</b> is already on Virgil
-      as <b>${esc(TRACKED[k.cik])}</b> — search that name to open it.</div>`;
+      as <b>${esc(TRACKED[k.cik])}</b>.
+      <button class="fbtn" style="margin-left:8px" data-open="${esc(TRACKED[k.cik])}"
+        data-prefer="fund">Open it</button></div>`;
     return;
   }
 
@@ -2015,8 +2071,10 @@ document.addEventListener("click", ev => {
     ev.preventDefault();
     qEl.value = open.dataset.open;
     query = open.dataset.open;
-    renderStock().then ? renderStock().then(() => { render(); initCharts(); })
-                       : (render(), initCharts());
+    // renderStock is async; calling it twice to test for a thenable ran the
+    // whole render path a second time on every click.
+    Promise.resolve(renderStock(open.dataset.prefer))
+      .then(() => { render(); initCharts(); });
     document.getElementById("stockpanel").scrollIntoView({behavior:"smooth", block:"start"});
     return;
   }
