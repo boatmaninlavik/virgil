@@ -109,7 +109,8 @@ fi
 
 # A blank page has shipped three times from a token that parsed but threw at
 # runtime. Render it headlessly and refuse to publish if it comes back empty.
-if [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]] && \
+CHROME_BIN="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
+if [[ -x "$CHROME_BIN" ]] && \
    curl -sf -o /dev/null -m 3 http://localhost:8770/ 2>/dev/null; then
   if ! $PY ui/smoke.py; then
     echo "$(date -u +%FT%TZ) smoke test failed - not publishing"

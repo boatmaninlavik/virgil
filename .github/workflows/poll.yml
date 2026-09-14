@@ -1,0 +1,88 @@
+# Runs the poll cycle in the cloud so the site stays current whether or not any
+# laptop is awake. Same run.sh the local launchd job uses.
+#
+# The working set is ~100 MB of accumulated EDGAR state and cannot be rebuilt
+# from the repo, so it is carried between runs in the Actions cache and mirrored
+# to Cloud Storage as the durable copy — a cache eviction then costs one slow
+# run rather than the entire history.
+name: poll
+
+on:
+  schedule:
+    - cron: "*/10 10-23,0-2 * * 1-5"   # every 10 min across EDGAR hours (UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: poll            # never two cycles writing the same state at once
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # the rebuilt page is committed, which is what deploys
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet pillow opencv-python-headless numpy \
+            cairosvg databento
+          sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser \
+            || sudo apt-get install -y -qq chromium
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Restore working state
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: virgil-state-${{ github.run_id }}
+          restore-keys: virgil-state-
+
+      - name: Seed from Cloud Storage if the cache was empty
+        if: steps.cache.outputs.cache-matched-key == ''
+        run: |
+          mkdir -p data
+          gcloud storage rsync -r gs://virgil-edgar/state data --quiet
+
+      - name: Credentials
+        run: |
+          mkdir -p ~/.virgil && chmod 700 ~/.virgil
+          printf 'DATABENTO_API_KEY=%s\n' "${{ secrets.DATABENTO_API_KEY }}" \
+            > ~/.virgil/credentials
+          chmod 600 ~/.virgil/credentials
+
+      - name: Serve the page so the render guard can run
+        run: |
+          nohup python3 ui/serve.py 8770 > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf -o /dev/null http://localhost:8770/ && break || sleep 1
+          done
+
+      - name: Poll, build, publish
+        env:
+          CHROME: /usr/bin/chromium-browser
+          FORCE: "1"          # the workflow's own schedule is the hours guard
+        run: |
+          git config user.name  "boatmaninlavik"
+          git config user.email "zsean0539@gmail.com"
+          ./run.sh
+
+      - name: Mirror state to Cloud Storage
+        if: always()
+        run: |
+          gcloud storage rsync -r -x '.*\.(log|tmp)$' data \
+            gs://virgil-edgar/state --quiet

@@ -9,7 +9,13 @@ if any key container came back empty.
 import json, os, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# Overridable so the same guard runs on a Linux CI runner, where the binary is
+# chromium rather than Chrome in /Applications.
+CHROME = os.environ.get("CHROME") or next(
+    (p for p in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                 "/usr/bin/chromium-browser", "/usr/bin/chromium",
+                 "/usr/bin/google-chrome") if os.path.exists(p)),
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 HOOK = """<script>
 window.addEventListener("error", e => {
   var d = document.createElement("div"); d.id = "jserr";
