@@ -8,7 +8,7 @@ name: daily
 
 on:
   schedule:
-    - cron: "30 11 * * 1-5"           # 07:30 ET, after the prior session posts
+    - cron: "37 11 * * 1-5"           # 07:30 ET, after the prior session posts
   workflow_dispatch:
 
 concurrency:

@@ -13,7 +13,10 @@ on:
     # the only reason to run less often would be politeness to sec.gov, and a
     # handful of conditional requests every five minutes is well inside their
     # fair-use guidance.
-    - cron: "*/5 10-23,0-2 * * 1-5"
+    # Split rather than "10-23,0-2": a comma-joined hour range is the kind of
+    # thing cron parsers disagree about, and this schedule had not fired once.
+    - cron: "3,8,13,18,23,28,33,38,43,48,53,58 10-23 * * 1-5"
+    - cron: "3,8,13,18,23,28,33,38,43,48,53,58 0-2 * * 1-5"
   workflow_dispatch:
 
 concurrency:
