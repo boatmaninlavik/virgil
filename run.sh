@@ -130,9 +130,21 @@ fi
 # Class A operations - not bytes stored - dominate the GCS bill.
 NEW_HASH=$(cat data/.content_hash 2>/dev/null || echo none)
 OLD_HASH=$(cat data/.synced_hash 2>/dev/null || echo none)
-if [[ "$NEW_HASH" == "$OLD_HASH" && "${FORCE_SYNC:-0}" != "1" ]]; then
+# "Nothing changed" has to mean the page is both uploaded *and* committed. It
+# used to mean only the former, so a cycle whose push was rejected marked
+# itself done and every later cycle skipped out early — the site sat on an old
+# page indefinitely while the logs claimed there was nothing to do.
+PAGE_COMMITTED=1
+if [[ -d .git ]] && ! git diff --quiet --exit-code -- ui/index.html ui/assets; then
+  PAGE_COMMITTED=0
+fi
+if [[ "$NEW_HASH" == "$OLD_HASH" && "$PAGE_COMMITTED" == "1" \
+      && "${FORCE_SYNC:-0}" != "1" ]]; then
   echo "$(date -u +%FT%TZ) no change ($NEW_HASH) - skipping upload"
   exit 0
+fi
+if [[ "$NEW_HASH" == "$OLD_HASH" ]]; then
+  echo "$(date -u +%FT%TZ) data unchanged but page not committed - publishing"
 fi
 
 [[ -d ui/data ]] && gcloud storage cp -r -Z ui/data "$BUCKET/" --quiet 2>/dev/null
