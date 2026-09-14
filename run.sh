@@ -173,6 +173,11 @@ gcloud storage cp data/ciks.json   "$BUCKET/data/ciks.json"   --content-type=app
 
 [[ -d data/stocks ]] && gcloud storage cp -r data/stocks "$BUCKET/data/" --quiet 2>/dev/null
 [[ -d data/prices ]] && gcloud storage cp -r data/prices "$BUCKET/data/" --quiet 2>/dev/null
+# The chart pulls a ticker's full history on demand rather than shipping a year
+# of closes for every symbol in the search shards, so the price files have to be
+# readable from the site's own origin.
+[[ -d data/prices ]] && gcloud storage rsync -r -c data/prices \
+  "$WEB_BUCKET/data/prices" --quiet 2>/dev/null || true
 [[ -f data/congress/trades.json ]] && gcloud storage cp data/congress/trades.json \
   "$BUCKET/data/congress-trades.json" --content-type=application/json --quiet 2>/dev/null
 cp data/.content_hash data/.synced_hash 2>/dev/null

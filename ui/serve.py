@@ -11,7 +11,7 @@ the same JSON; nothing else about the page changes.
 
     python3 ui/serve.py [port]
 """
-import json, os, sys, time
+import json, os, re, sys, time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,7 +47,38 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/requests"):
             return self._json(200, load_queue())
+        if self.path.startswith("/api/intraday"):
+            return self._intraday()
         return super().do_GET()
+
+    def _intraday(self):
+        """Mirror of api/intraday.js so the day chart works in development too.
+
+        Yahoo sends no CORS headers, so this cannot be a direct call from the
+        page; and it fingerprints the agent, refusing a full Chrome string where
+        the bare one is served.
+        """
+        import urllib.parse, urllib.request
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        t = re.sub(r"[^A-Z0-9.\-]", "", (q.get("t", [""])[0]).upper())[:12]
+        if not t:
+            return self._json(400, {"error": "ticker required"})
+        url = ("https://query1.finance.yahoo.com/v7/finance/spark"
+               f"?symbols={urllib.parse.quote(t)}&range=1d&interval=5m")
+        try:
+            raw = urllib.request.urlopen(urllib.request.Request(
+                url, headers={"User-Agent": "Mozilla/5.0"}), timeout=20).read()
+            resp = json.loads(raw)["spark"]["result"][0]["response"][0]
+            ts = resp.get("timestamp") or []
+            cl = (resp.get("indicators", {}).get("quote") or [{}])[0].get("close") or []
+            series = [[t_ * 1000, round(c, 4)] for t_, c in zip(ts, cl) if c is not None]
+        except Exception:
+            return self._json(502, {"error": "upstream unavailable"})
+        if len(series) < 2:
+            return self._json(404, {"error": "no session data"})
+        return self._json(200, {"ticker": t, "series": series,
+                                "prev_close": (resp.get("meta") or {}).get("previousClose"),
+                                "source": "Yahoo Finance spark, 5-minute intervals"})
 
     def do_POST(self):
         if not self.path.startswith("/api/add"):

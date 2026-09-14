@@ -256,6 +256,8 @@ nav{display:flex;gap:7px;padding-bottom:20px;flex-wrap:wrap;align-items:center}
 .who-tbl tr:last-child td{border-bottom:none}
 .role{font-size:11.5px;color:var(--ink-3)}
 .chartwrap{margin:14px 0 4px}
+.chartmsg{height:150px;display:grid;place-items:center;text-align:center;
+  font-size:12.5px;color:var(--ink-3);padding:0 20px}
 .chart svg{display:block;overflow:visible}
 .chart .baseline{stroke:var(--rule);stroke-width:1;stroke-dasharray:3 3}
 .chart .cross{stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3;pointer-events:none}
@@ -641,16 +643,26 @@ function sparkline(series, w, h){
       r="2.6" fill="${col}"/></svg>`;
 }
 
-const RANGES = [["1M",22],["3M",64],["6M",128],["1Y",252],["All",0]];
+// -1 is not a slice: the day view is five-minute intraday, a different series
+// fetched on demand. Everything else is a window onto the daily closes.
+const RANGES = [["1D",-1],["1W",5],["1M",22],["3M",64],["6M",128],["1Y",252],["All",0]];
 
 const QRANGES = [["1Y",4],["2Y",8],["All",0]];
 
-function priceChart(series, id, mode){
+function priceChart(series, id, mode, ticker){
   if(!series || series.length < 2) return "";
   const q = mode === "quarterly";
-  const ranges = q ? QRANGES : RANGES;
-  const active = q ? ranges.length - 1 : 2;
+  // Offer only the ranges this series can tell apart. A 1Y button on ten bars
+  // renders the same picture as 1M and 3M, which is what made every control on
+  // the chart look broken — they were all slicing past the end of the data.
+  const all = q ? QRANGES : RANGES;
+  const ranges = all.filter(([, n], i) =>
+    n === -1 ? !!ticker
+             : n === 0 || n < series.length ||
+               (i > 0 && all[i - 1][1] > 0 && all[i - 1][1] < series.length));
+  const active = Math.max(0, ranges.findIndex(([, n]) => n === 0 || n >= 60));
   return `<div class="chartwrap" id="cw-${id}" data-mode="${q ? "quarterly" : "daily"}"
+      ${ticker ? `data-ticker="${esc(ticker)}"` : ""}
       data-series='${JSON.stringify(series)}'>
     <div class="ranges">${ranges.map((r,i) =>
       `<button class="rbtn${i===active?" on":""}" data-n="${r[1]}">${r[0]}</button>`).join("")}</div>
@@ -659,10 +671,70 @@ function priceChart(series, id, mode){
   </div>`;
 }
 
+// The shards carry a short series so a search stays small; the full history
+// lives beside the data and is pulled in once, the first time a chart is shown.
+async function loadFullSeries(wrap){
+  const tk = wrap.dataset.ticker;
+  if(!tk || wrap.dataset.full === "1" || wrap.dataset.full === "x") return;
+  wrap.dataset.full = "x";                       // don't retry on every redraw
+  const base = DATA_BASE || "";
+  try{
+    const r = await fetch(`${base}data/prices/${encodeURIComponent(tk)}.json`);
+    if(!r.ok) return;
+    const d = await r.json();
+    if(!Array.isArray(d.series) || d.series.length < 2) return;
+    const cur = JSON.parse(wrap.dataset.series);
+    if(d.series.length <= cur.length) return;
+    wrap.dataset.series = JSON.stringify(d.series);
+    wrap.dataset.full = "1";
+    const host = wrap.querySelector(".ranges");
+    if(host){
+      const on = host.querySelector(".rbtn.on")?.dataset.n;
+      host.innerHTML = RANGES
+        .filter(([, n], i) => n === -1 ? true
+                : n === 0 || n < d.series.length ||
+                  (i > 0 && RANGES[i - 1][1] > 0 && RANGES[i - 1][1] < d.series.length))
+        .map(([lab, n]) => `<button class="rbtn${String(n) === on ? " on" : ""}"
+             data-n="${n}">${lab}</button>`).join("");
+      if(!host.querySelector(".rbtn.on")) host.lastElementChild?.classList.add("on");
+    }
+    drawChart(wrap);
+  }catch(e){ /* the short series still draws */ }
+}
+
+async function loadIntraday(wrap){
+  const tk = wrap.dataset.ticker;
+  const host = wrap.querySelector(".chart");
+  if(!tk){ return; }
+  host.innerHTML = `<div class="chartmsg">Loading today…</div>`;
+  try{
+    const r = await fetch(`/api/intraday?t=${encodeURIComponent(tk)}`);
+    if(!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    if(!Array.isArray(d.series) || d.series.length < 2) throw new Error("empty");
+    wrap._intraday = d;
+    drawChart(wrap);
+  }catch(e){
+    // Outside market hours there is no session to draw. Say so and fall back,
+    // rather than leaving the reader looking at an empty frame.
+    host.innerHTML = `<div class="chartmsg">No trading session today —
+      showing the most recent week instead.</div>`;
+    const wk = wrap.querySelector('.rbtn[data-n="5"]') ||
+               wrap.querySelector('.rbtn[data-n="22"]');
+    if(wk){
+      wrap.querySelectorAll(".rbtn").forEach(x => x.classList.remove("on"));
+      wk.classList.add("on");
+      setTimeout(() => drawChart(wrap), 900);
+    }
+  }
+}
+
 function drawChart(wrap){
-  const all = JSON.parse(wrap.dataset.series);
   const n = +(wrap.querySelector(".rbtn.on")?.dataset.n || 0);
-  const data = n ? all.slice(-n) : all;
+  const intraday = n === -1;
+  if(intraday && !wrap._intraday){ loadIntraday(wrap); return; }
+  const all = intraday ? wrap._intraday.series : JSON.parse(wrap.dataset.series);
+  const data = (intraday || !n) ? all : all.slice(-n);
   const host = wrap.querySelector(".chart");
   const W = host.clientWidth || 640, H = 150, PAD = 4;
   const vals = data.map(d => d[1]);
@@ -671,9 +743,11 @@ function drawChart(wrap){
   const y = v => H - PAD - ((v - lo) / rng) * (H - PAD * 2);
   const line = data.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d[1]).toFixed(1)}`).join("");
   const area = `${line}L${W},${H}L0,${H}Z`;
-  const up = data[data.length - 1][1] >= data[0][1];
+  // An opening gap belongs in the day's number, so intraday measures from the
+  // prior close rather than from the first print of the session.
+  const first = (intraday && wrap._intraday.prev_close) || data[0][1];
+  const up = data[data.length - 1][1] >= first;
   const col = up ? "var(--buy)" : "var(--sell)";
-  const first = data[0][1];
 
   host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}"
       preserveAspectRatio="none" role="img" aria-label="price history">
@@ -701,7 +775,12 @@ function drawChart(wrap){
     // zero gave Infinity, and the guarded null form threw on .toFixed, which
     // left the whole panel blank with no clue why.
     const ch = (first && isFinite(d[1])) ? ((d[1] - first) / first) * 100 : null;
-    rd.textContent = d[0];
+    // Intraday x-values are epoch milliseconds, not ISO dates — a session reads
+    // in clock time, and showing 1757... where a date belongs is worse than
+    // showing nothing.
+    rd.textContent = intraday
+      ? new Date(d[0]).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})
+      : d[0];
     // a fund's book is billions; a share price is dollars
     const val = wrap.dataset.mode === "quarterly"
       ? fmtUSD(d[1]) : (d[1] == null ? "—" : "$" + d[1].toFixed(2));
@@ -724,7 +803,10 @@ function drawChart(wrap){
 }
 
 function initCharts(){
-  document.querySelectorAll(".chartwrap").forEach(drawChart);
+  document.querySelectorAll(".chartwrap").forEach(w => {
+    drawChart(w);                 // draw what we have immediately
+    loadFullSeries(w);            // then widen it if more history exists
+  });
 }
 
 document.addEventListener("click", ev => {
@@ -1008,7 +1090,7 @@ function priceBar(ticker, series, close, closeDate){
     ${close ? `<div><div class="pxlab">Close ${esc(closeDate||"")}</div>
       <div class="pxdelta">$${Number(close).toFixed(2)}</div></div>` : ""}
   </div>
-  ${series && series.length > 1 ? priceChart(series, "lite-" + ticker) : ""}
+  ${series && series.length > 1 ? priceChart(series, "lite-" + ticker, "daily", ticker) : ""}
   <p class="lagnote" style="margin-top:8px">
     ${lq ? `Quote from ${esc(QMETA.source || "Yahoo")}${lq.exchange ? " · " + esc(lq.exchange) : ""},
       fetched ${esc(QMETA.fetched || "")}. Not licensed real-time — exchange feeds are
