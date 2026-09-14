@@ -213,6 +213,12 @@ def enrich(label, rec, person=""):
 
 def add(req, funds):
     cik = req["cik"]
+    # Entities are identified by CIK, not by the label someone searched for.
+    # "Bridgewater Associates, LP" and "Bridgewater" are the same filer, and
+    # adding the long form created a second copy of a fund already tracked.
+    for label, f in funds.items():
+        if str(f.get("cik", "")).zfill(10) == str(cik).zfill(10):
+            return "already-tracked", f"already tracked as {label}"
     name, forms, last = profile(cik)
     if not name:
         return "unreachable", f"EDGAR returned nothing for CIK {cik}"

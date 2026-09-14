@@ -1644,6 +1644,10 @@ async function expandRow(tk, wrap){
 // CORS headers, so the browser cannot ask EDGAR itself). Picking a candidate
 // POSTs to /api/add and the poller ingests their filings on its next cycle.
 const FILERS = {__loaded:{}};
+// Labels differ from registered names — "Bridgewater" here is "Bridgewater
+// Associates, LP" on EDGAR — so offering to add one would silently duplicate
+// a fund already present. Identity is the CIK.
+const TRACKED = /*__TRACKED__*/{};
 let ALIASES = null;
 
 async function loadAliases(){
@@ -1758,6 +1762,15 @@ async function offerToAdd(q){
       to track.<br><br>
       Investors usually file under their firm rather than their own name: for
       Cathie Wood, search <b>ARK Investment Management</b>.</div>`;
+    return;
+  }
+
+  const known = hits.filter(h => TRACKED[h.cik]);
+  if(known.length){
+    const k = known[0];
+    sub.textContent = "Already tracked.";
+    box.innerHTML = `<div class="nores"><b>${esc(k.name)}</b> is already on Virgil
+      as <b>${esc(TRACKED[k.cik])}</b> — search that name to open it.</div>`;
     return;
   }
 
@@ -2428,6 +2441,10 @@ def build(interval_label="60s", reload_seconds=60):
             .replace("/*__QMETA__*/{}", json.dumps(
                 {k: v for k, v in quote_meta.items() if k != "quotes"}, separators=(",", ":")))
             .replace("/*__LOGOS__*/{}", json.dumps(firm_logos, separators=(",", ":")))
+            .replace("/*__TRACKED__*/{}", json.dumps(
+                {str(v.get("cik", "")).zfill(10): k
+                 for k, v in load("funds.json", {}).items() if v.get("cik")},
+                separators=(",", ":")))
             .replace("/*__CONGTKR__*/{}", "{}")
             .replace("/*__TICKERS__*/[]", json.dumps(
                 sorted(ticker_index), separators=(",", ":")))
