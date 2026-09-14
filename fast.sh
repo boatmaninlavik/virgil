@@ -38,6 +38,14 @@ if [[ ! -f "$QSTAMP" ]] || \
   fi
 fi
 
+# Adding an investor changes the payload baked into the page, so that cycle has
+# to do the whole job: rebuild, verify it renders, commit, deploy.
+if [[ -f data/.needs_full_build ]]; then
+  rm -f data/.needs_full_build
+  echo "$(date -u +%FT%TZ) new entity — running the full publish"
+  exec ./run.sh
+fi
+
 $PY ui/build.py --live-only
 
 # Only the blocks readers actually poll. The heavy per-fund and per-ticker files

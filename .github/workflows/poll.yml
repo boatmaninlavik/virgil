@@ -24,7 +24,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read         # nothing is committed here
+  contents: write        # the add path rebuilds and commits the page
 
 jobs:
   cycle:
@@ -69,7 +69,21 @@ jobs:
       # readers get their data from storage, and index.html only changes when
       # its own code does, which is the daily job's business.
       - name: Poll and publish live data
-        run: ./fast.sh
+        env:
+          CHROME: /usr/bin/chromium-browser
+          FORCE: "1"
+          SKIP_DAILY: "1"     # heavy scans belong to daily.yml
+        run: |
+          # fast.sh hands off to run.sh when a new investor needs the page
+          # rebuilt, and that path commits, so it needs an identity and a server
+          # for the render check.
+          git config user.name  "boatmaninlavik"
+          git config user.email "zsean0539@gmail.com"
+          nohup python3 ui/serve.py 8770 > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf -o /dev/null http://localhost:8770/ && break || sleep 1
+          done
+          ./fast.sh
 
       - name: Mirror state to Cloud Storage
         if: always()

@@ -273,6 +273,15 @@ if __name__ == "__main__":
     save(FUNDS, funds)
     save(QUEUE, q)
 
+    # A new investor changes funds.json, people.json and the holdings tree —
+    # all of which are baked into index.html, not into the live data blocks the
+    # frequent cycle republishes. Without this the entity is fully ingested and
+    # still invisible until the next daily rebuild, which is what "I pressed
+    # add and nothing happened" actually was.
+    if any(r["state"] == "added" for r in pending):
+        open(os.path.join(DATA, ".needs_full_build"), "w").write("")
+        print("  full rebuild needed to surface it", flush=True)
+
     # Holdings and history only matter for 13F filers, and both are slow, so
     # run them once after the batch rather than per request.
     if did13f:
