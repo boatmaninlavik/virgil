@@ -9,7 +9,11 @@ name: poll
 
 on:
   schedule:
-    - cron: "*/10 10-23,0-2 * * 1-5"   # every 10 min across EDGAR hours (UTC)
+    # Five minutes is the platform floor. Free now that the repo is public, so
+    # the only reason to run less often would be politeness to sec.gov, and a
+    # handful of conditional requests every five minutes is well inside their
+    # fair-use guidance.
+    - cron: "*/5 10-23,0-2 * * 1-5"
   workflow_dispatch:
 
 concurrency:

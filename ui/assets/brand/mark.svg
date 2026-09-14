@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <title>Virgil</title>
+  <!-- A Roman V carries its weight on the downstroke and lifts on the upstroke.
+       A uniform stroke reads as a checkmark; the modulation is what makes it a
+       letter. Enough contrast to be a V, not so much that the thin arm drops
+       out at favicon size. One outline, so both weights meet cleanly at the
+       vertex, and the square sits over the arm's terminal rather than beside
+       it — the last print on a series. -->
+  <path fill="currentColor"
+        d="M19.0 50.9 L99.1 179.1 L179.2 35.1 L160.8 24.9 L100.8 132.7 L41.0 37.1 Z"/>
+  <rect fill="currentColor" x="157" y="14" width="30" height="30"/>
+</svg>
