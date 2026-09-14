@@ -147,12 +147,20 @@ gcloud storage cp data/ciks.json   "$BUCKET/data/ciks.json"   --content-type=app
 cp data/.content_hash data/.synced_hash 2>/dev/null
 echo "$(date -u +%FT%TZ) synced -> $BUCKET ($NEW_HASH)"
 
-# Push the same build to Vercel when it is configured. Silent no-op otherwise,
-# so the local-only setup keeps working exactly as before.
-if [[ -d .vercel ]] && command -v vercel >/dev/null 2>&1; then
-  if ./deploy.sh >> data/deploy.log 2>&1; then
-    echo "$(date -u +%FT%TZ) deployed to vercel"
-  else
-    echo "$(date -u +%FT%TZ) vercel deploy failed (see data/deploy.log)"
+# The repo is connected to Vercel, so pushing the rebuilt page is what deploys
+# it. Commit only the page and its assets — the sharded data went to the public
+# bucket above, which is the whole reason the repo stays small enough for this.
+# Uploading via the CLI as well would just produce a second, identical
+# deployment for every change.
+if [[ -d .git ]] && git diff --quiet --exit-code -- ui/index.html ui/assets; then
+  : # page unchanged, nothing to push
+elif [[ -d .git ]]; then
+  git add ui/index.html ui/assets 2>/dev/null
+  if git commit -q -m "Rebuild: $NEW_HASH" 2>>data/deploy.log; then
+    if git push -q origin main 2>>data/deploy.log; then
+      echo "$(date -u +%FT%TZ) pushed -> vercel builds from git"
+    else
+      echo "$(date -u +%FT%TZ) push failed (see data/deploy.log)"
+    fi
   fi
 fi
