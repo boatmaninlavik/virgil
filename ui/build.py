@@ -689,12 +689,17 @@ function drawChart(wrap){
     cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i));
     cross.style.opacity = 1;
     dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(d[1])); dot.style.opacity = 1;
-    const ch = ((d[1] - first) / first) * 100;
+    // A fund whose first reported quarter is zero — Norges Bank's history
+    // starts before it filed — has no percentage to show from it. Dividing by
+    // zero gave Infinity, and the guarded null form threw on .toFixed, which
+    // left the whole panel blank with no clue why.
+    const ch = (first && isFinite(d[1])) ? ((d[1] - first) / first) * 100 : null;
     rd.textContent = d[0];
     // a fund's book is billions; a share price is dollars
     const val = wrap.dataset.mode === "quarterly"
-      ? fmtUSD(d[1]) : "$" + d[1].toFixed(2);
-    rp.innerHTML = `${val} <span style="color:${ch>=0?"var(--buy)":"var(--sell)"};
+      ? fmtUSD(d[1]) : (d[1] == null ? "—" : "$" + d[1].toFixed(2));
+    rp.innerHTML = ch == null ? val
+      : `${val} <span style="color:${ch>=0?"var(--buy)":"var(--sell)"};
       font-weight:500">${ch>=0?"+":""}${ch.toFixed(1)}%</span>`;
   };
   show(data.length - 1);
@@ -900,13 +905,19 @@ function renderFund(f){
     ${(f.history && f.history.length > 1) ? (() => {
       const h = f.history;
       const first = h[0], last = h[h.length - 1];
-      const ch = first[1] ? ((last[1] - first[1]) / first[1]) * 100 : null;
+      const ch = (first[1] && isFinite(last[1]))
+        ? ((last[1] - first[1]) / first[1]) * 100 : null;
       const col = ch == null ? "var(--ink-3)" : ch > 0 ? "var(--buy)" : "var(--sell)";
       return `<div class="pxbar" style="margin-top:16px">
           <div><div class="pxlab">Reported 13F value</div>
             <div class="pxnow">${fmtUSD(last[1])}</div></div>
           <div><div class="pxlab">Since ${first[0]}</div>
-            <div class="pxdelta" style="color:${col}">${ch>0?"+":""}${ch.toFixed(1)}%</div></div>
+            <div class="pxdelta" style="color:${col}">${
+              // Norges Bank's first quarter on file is zero, so there is no
+              // percentage from it. col already handled null; this did not,
+              // and the throw blanked the entire fund panel.
+              ch == null ? "—" : (ch > 0 ? "+" : "") + ch.toFixed(1) + "%"
+            }</div></div>
           <div><div class="pxlab">Quarters on file</div>
             <div class="pxdelta">${h.length}</div></div>
         </div>
