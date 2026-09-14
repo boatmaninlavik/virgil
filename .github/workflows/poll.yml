@@ -35,8 +35,12 @@ jobs:
           python -m pip install --quiet --upgrade pip
           python -m pip install --quiet pillow opencv-python-headless numpy \
             cairosvg databento
-          sudo apt-get update -qq && sudo apt-get install -y -qq chromium-browser \
-            || sudo apt-get install -y -qq chromium
+          # zsh because run.sh is the same script the local job runs; rewriting
+          # it for bash would mean two subtly different pipelines.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zsh
+          sudo apt-get install -y -qq chromium-browser || \
+            sudo apt-get install -y -qq chromium || true
 
       - uses: google-github-actions/auth@v2
         with:
