@@ -170,7 +170,22 @@ if [[ -d .git ]] && git diff --quiet --exit-code -- ui/index.html ui/assets; the
 elif [[ -d .git ]]; then
   git add ui/index.html ui/assets 2>/dev/null
   if git commit -q -m "Rebuild: $NEW_HASH" 2>>data/deploy.log; then
-    if git push -q origin main 2>>data/deploy.log; then
+    # Another cycle, or a person, may have pushed while this one was building —
+    # a 16-minute run is easily overtaken. Rebase onto whatever landed rather
+    # than failing: the page is regenerated output, so there is nothing to
+    # merge, and the newest build is the one that should win.
+    pushed=0
+    for attempt in 1 2 3; do
+      if git push -q origin main 2>>data/deploy.log; then pushed=1; break; fi
+      git fetch -q origin main 2>>data/deploy.log || break
+      git rebase -q origin/main 2>>data/deploy.log || {
+        git checkout --ours ui/index.html 2>/dev/null
+        git add ui/index.html 2>/dev/null
+        GIT_EDITOR=true git rebase --continue >>data/deploy.log 2>&1 || {
+          git rebase --abort >/dev/null 2>&1; break; }
+      }
+    done
+    if [[ "$pushed" == "1" ]]; then
       echo "$(date -u +%FT%TZ) pushed -> vercel builds from git"
     else
       echo "$(date -u +%FT%TZ) push failed (see data/deploy.log)"
