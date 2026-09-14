@@ -2,6 +2,10 @@
 # One poll cycle: fetch new filings -> rebuild page -> push to GCS.
 # Installed as a launchd job; safe to run by hand.
 set -euo pipefail
+# zsh aborts on a glob that matches nothing, where bash passes the pattern
+# through. The daily marker files legitimately do not exist on a first run, so
+# let an empty match expand to nothing instead of killing the cycle.
+setopt nullglob
 cd "$(dirname "$0")"
 
 BUCKET="gs://virgil-edgar"
