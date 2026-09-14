@@ -40,6 +40,10 @@ def run(url_base="http://localhost:8770"):
             dom = subprocess.run(
                 [CHROME, "--headless=new", "--disable-gpu", "--disk-cache-size=1",
                  "--disable-application-cache", "--disable-background-networking",
+                 # CI has no usable sandbox and a tiny /dev/shm; without these
+                 # Chrome exits silently, the DOM comes back empty, and the
+                 # render guard blocks a publish of a page that was fine.
+                 "--no-sandbox", "--disable-dev-shm-usage",
                  "--virtual-time-budget=9000",
                  "--dump-dom", f"{url_base}/_smoke.html"],
                 capture_output=True, text=True, timeout=240).stdout
