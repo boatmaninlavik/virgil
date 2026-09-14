@@ -43,3 +43,25 @@ Everything comes from public sources: SEC EDGAR (filings), the House Clerk
 (congressional PTRs), Yahoo (quotes and split-adjusted closes), and Databento
 (licensed daily bars). Logos come from LinkedIn, Wikidata and firms' own sites;
 portraits from Wikipedia and verified image search.
+
+## Running
+
+The pipeline runs in GitHub Actions, not on any laptop:
+
+| Workflow | Schedule | Does |
+|---|---|---|
+| `poll.yml` | every 10 min, EDGAR hours | poll, live Form 4s, quotes, build, publish |
+| `daily.yml` | 07:30 ET | market-wide scan, 13F, congress, prices, splits, portraits, logos |
+
+The ~100 MB working set cannot be rebuilt from this repo, so it rides in the
+Actions cache between runs and mirrors to `gs://virgil-edgar/state` as the
+durable copy. Losing the cache costs one slow run, not the history.
+
+Publishing is a git push: the page is committed, Vercel deploys it, and the
+sharded data goes to `gs://virgil-web`. A build that renders blank cannot get
+that far — the workflow serves the page and runs the same headless render check
+the local setup uses.
+
+To run a cycle by hand: `gh workflow run poll.yml`. To go back to running it
+locally, `launchctl load ~/Library/LaunchAgents/me.virgil.edgar.plist.disabled`
+— but only one of the two should be active, since both push to `main`.
