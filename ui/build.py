@@ -1424,8 +1424,8 @@ async function renderStock(){
           <div class="pxdelta">$${ref.toFixed(2)}</div></div>
         <div><div class="pxlab">Since those trades</div>
           <div class="pxdelta" style="color:${col}">${ch>0?"+":""}${ch.toFixed(1)}%</div></div>` : ""}
-        ${sparkline(p.series, 210, 44)}
       </div>
+      ${priceChart(p.series, "full-" + d.ticker, "daily", d.ticker)}
       <p class="lagnote" style="margin-top:8px">History from ${esc(p.source||"")}.
         ${lq ? `Live quote from ${esc(QMETA.source||"Yahoo")}${lq.exchange ? " · " + esc(lq.exchange) : ""}
           ${lq.delay_s ? ", delayed " + Math.round(lq.delay_s/60) + " min" : ""},
@@ -2574,6 +2574,17 @@ def build(interval_label="60s", reload_seconds=60, data_only=False,
 
     # Investor-filer index for the "add this person" lookup, sharded the same
     # way as tickers: a search touches one ~80 KB block, not 1.9 MB.
+    # The chart fetches data/prices/<TICKER>.json relative to the page. In
+    # production that resolves to the bucket; locally the server's root is ui/,
+    # so link the price files in rather than copying 39 MB of duplicates.
+    _px = os.path.join(DATA, "prices")
+    _link = os.path.join(side, "prices")
+    if os.path.isdir(_px) and not os.path.exists(_link):
+        try:
+            os.symlink(_px, _link)
+        except OSError:
+            pass
+
     # the page fetches this at search time to map a person to their fund
     _al = load("aliases.json", {})
     if _al:
