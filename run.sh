@@ -152,6 +152,12 @@ fi
 # so the sharded blocks have to be reachable over HTTP from the live domain.
 [[ -d ui/data ]] && gcloud storage rsync -r -c ui/data "$WEB_BUCKET/data" \
   --quiet 2>/dev/null || true
+# Public objects default to an hour of caching, which would make the page's
+# 30-second freshness check meaningless. These two are the live path.
+for f in live-meta.json live.json; do
+  [[ -f "ui/data/$f" ]] && gcloud storage objects update "$WEB_BUCKET/data/$f" \
+    --cache-control="no-cache, max-age=0, must-revalidate" --quiet 2>/dev/null || true
+done
 gcloud storage cp ui/index.html "$BUCKET/index.html" \
   --content-type=text/html \
   --cache-control="no-cache, max-age=0" --quiet

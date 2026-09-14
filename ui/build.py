@@ -547,14 +547,14 @@ kbd{font:500 11px var(--mono);border:1px solid var(--rule);border-bottom-width:2
 </footer>
 
 <script>
-const EVENTS = /*__EVENTS__*/[];
+let EVENTS = /*__EVENTS__*/[];
 const PEOPLE = /*__PEOPLE__*/{};
 const FIRMS  = /*__FIRMS__*/{};
-const CLUSTERS = /*__CLUSTERS__*/[];
+let CLUSTERS = /*__CLUSTERS__*/[];
 const STOCKS = /*__STOCKS__*/{};
 const HOLDINGS = /*__HOLDINGS__*/{};
 const MEMBERS  = /*__MEMBERS__*/{};
-const QUOTES   = /*__QUOTES__*/{};
+let QUOTES   = /*__QUOTES__*/{};
 const QMETA    = /*__QMETA__*/{};
 const LOGOS    = /*__LOGOS__*/{};
 const CONGTKR  = /*__CONGTKR__*/{};
@@ -2098,7 +2098,55 @@ document.getElementById("interval").textContent = META.interval || "5 min";
 
 paintFollowCount();
 render(); renderStock().then ? renderStock().then(initCharts) : initCharts(); renderStakes(); renderClusters(); renderPeople(); renderFirms();
-setTimeout(() => { if(!query) location.reload(); }, (META.reload_seconds || 300) * 1000);
+// Live updates without reloading.
+//
+// The page used to call location.reload() on a timer: 2.9 MB re-fetched, a
+// visible flash, scroll position and any open panel lost — and it only ever
+// showed something new if a deploy had happened in between, because the events
+// were baked into the HTML.
+//
+// Now the embedded copy is just the first paint, so the page is readable
+// immediately, and a small marker file is polled for changes. Only when the
+// build stamp moves does the full payload get fetched and swapped in place.
+const LIVE_POLL_MS = 30000;
+let liveStamp = META.generated || "";
+let liveFails = 0;
+
+async function checkForUpdate(){
+  try{
+    const base = DATA_BASE || "";
+    const r = await fetch(`${base}data/live-meta.json?t=${Date.now()}`, {cache: "no-store"});
+    if(!r.ok) throw new Error(String(r.status));
+    const meta = await r.json();
+    liveFails = 0;
+    if(!meta.built || meta.built === liveStamp) return;
+
+    const full = await fetch(`${base}data/live.json?t=${Date.now()}`, {cache: "no-store"});
+    if(!full.ok) throw new Error(String(full.status));
+    const d = await full.json();
+    if(Array.isArray(d.events)) EVENTS = d.events;
+    if(Array.isArray(d.clusters)) CLUSTERS = d.clusters;
+    if(d.quotes && typeof d.quotes === "object") QUOTES = d.quotes;
+    liveStamp = meta.built;
+
+    // Re-render whichever view is showing, leaving scroll and any open panel
+    // alone. A filter the reader is typing into is not interrupted.
+    const wantDiscover = document.getElementById("tab-discover")
+      && document.getElementById("tab-discover").classList.contains("on");
+    if(wantDiscover) renderDiscover(); else render();
+    const stamp = document.getElementById("stamp");
+    if(stamp) stamp.textContent = "updated " + new Date(meta.built)
+      .toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+  }catch(e){
+    // A deploy can change the page's own code, at which point swapping data
+    // into the old one is not safe. Reload after repeated failures instead.
+    if(++liveFails >= 10){ liveFails = 0; if(!query) location.reload(); }
+  }
+}
+setInterval(checkForUpdate, LIVE_POLL_MS);
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") checkForUpdate();
+});
 </script>
 </body>
 </html>
@@ -2397,6 +2445,17 @@ def build(interval_label="60s", reload_seconds=60):
     json.dump({"actions": ACTIONS, "funds": fund_tbl,
                "shards": sorted(shards), "count": len(compact)},
               open(os.path.join(tdir, "_index.json"), "w"), separators=(",", ":"))
+    # Live payload: the page polls the tiny marker and only pulls the full file
+    # when the build stamp moves, so a reader sees new filings without the page
+    # reloading and without waiting on a deploy.
+    live = {"built": meta.get("generated"),
+            "events": events, "clusters": clusters, "quotes": quotes}
+    json.dump(live, open(os.path.join(side, "live.json"), "w"),
+              separators=(",", ":"))
+    json.dump({"built": live["built"], "events": len(events)},
+              open(os.path.join(side, "live-meta.json"), "w"),
+              separators=(",", ":"))
+
     # Investor-filer index for the "add this person" lookup, sharded the same
     # way as tickers: a search touches one ~80 KB block, not 1.9 MB.
     # the page fetches this at search time to map a person to their fund
