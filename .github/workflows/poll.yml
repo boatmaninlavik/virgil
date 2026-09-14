@@ -37,7 +37,16 @@ jobs:
       # and market-data packages exist for the daily job and cost 107 seconds
       # of billable runner time to install, every single run.
       - name: Install zsh
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh
+        # A transient apt mirror failure was enough to fail the whole cycle
+        # before it fetched anything, leaving queued work unprocessed. Retry,
+        # and do not let a stale index alone stop the run.
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -qq || true
+            sudo apt-get install -y -qq zsh && break
+            sleep $((i * 5))
+          done
+          command -v zsh
 
       - uses: google-github-actions/auth@v2
         with:
@@ -88,5 +97,8 @@ jobs:
       - name: Mirror state to Cloud Storage
         if: always()
         run: |
+          # A run that failed before restoring state has nothing to mirror, and
+          # rsync from a missing directory turned one failure into two.
+          [ -d data ] || { echo "no working set to mirror"; exit 0; }
           gcloud storage rsync -r -x '.*\.(log|tmp)$' data \
             gs://virgil-edgar/state --quiet

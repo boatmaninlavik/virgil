@@ -256,6 +256,11 @@ nav{display:flex;gap:7px;padding-bottom:20px;flex-wrap:wrap;align-items:center}
 .who-tbl tr:last-child td{border-bottom:none}
 .role{font-size:11.5px;color:var(--ink-3)}
 .chartwrap{margin:14px 0 4px}
+.spin{display:inline-block;width:11px;height:11px;margin-right:6px;
+  border:2px solid var(--rule);border-top-color:var(--ink-2);border-radius:50%;
+  vertical-align:-1px;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
 .chooser{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 14px}
 .chooserlab{font:500 10.5px/1 var(--mono,ui-monospace);letter-spacing:.1em;
   text-transform:uppercase;color:var(--ink-3)}
@@ -1886,6 +1891,38 @@ function formLabel(f){
   return [...new Set((f||[]).map(x => m[x] || x))].join(" · ");
 }
 
+// "Added" followed by silence is not a status. Ingesting reads EDGAR, pulls a
+// 13F and fetches a logo, which takes minutes — so say what is happening, and
+// keep checking until the entity actually shows up rather than leaving the
+// reader to guess whether it worked.
+async function watchForEntity(name, cik, sub){
+  const started = Date.now();
+  const say = t => { if(sub) sub.innerHTML = t; };
+  say(`<span class="spin"></span> Adding <b>${esc(name)}</b> — reading their
+       filings from EDGAR. This takes a few minutes.`);
+  for(let i = 0; i < 80; i++){
+    await new Promise(r => setTimeout(r, 15000));
+    try{
+      const base = DATA_BASE || "";
+      const r = await fetch(`${base}data/live-meta.json?t=${Date.now()}`,
+                            {cache: "no-store"});
+      if(r.ok){
+        const m = await r.json();
+        if(m.built && m.built !== (META.generated || "")){
+          say(`<b>${esc(name)}</b> is on Virgil now — reload to see them in
+               Discover and on any stock they have traded.`);
+          return;
+        }
+      }
+    }catch(e){ /* keep waiting */ }
+    const mins = Math.round((Date.now() - started) / 60000);
+    if(mins >= 2) say(`<span class="spin"></span> Still adding <b>${esc(name)}</b> —
+      pulling their holdings and building the page. ${mins} min so far.`);
+  }
+  say(`<b>${esc(name)}</b> is queued but has not appeared yet. The poller runs
+       every few minutes; they will show up on its next pass.`);
+}
+
 async function offerToAdd(q){
   const box = document.getElementById("addbox");
   const sub = document.getElementById("addsub");
@@ -1965,9 +2002,7 @@ async function offerToAdd(q){
         const j = await r.json().catch(() => ({}));
         if(!r.ok || !j.status) throw new Error(j.error || `HTTP ${r.status}`);
         btn.textContent = j.status === "queued" ? "Added" : "Already added";
-        sub.textContent = `${card.dataset.name} is being added. Fetching their ` +
-          `filings, holdings and profile takes a few minutes — they will then ` +
-          `appear in Discover and in any stock they have traded.`;
+        watchForEntity(card.dataset.name, card.dataset.cik, sub);
       }catch(e){
         btn.disabled = false; btn.textContent = "Add";
         sub.textContent = "Could not queue that just now — the request did not " +
