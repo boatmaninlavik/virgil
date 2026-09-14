@@ -1,19 +1,18 @@
-# Runs the poll cycle in the cloud so the site stays current whether or not any
-# laptop is awake. Same run.sh the local launchd job uses.
+# The heavy half of the pipeline: market-wide Form 4 scans, 13F holdings,
+# congressional PTRs, the metered price update, split adjustment, and the
+# portrait and logo backfill. Tens of minutes, needed once a day.
 #
-# The working set is ~100 MB of accumulated EDGAR state and cannot be rebuilt
-# from the repo, so it is carried between runs in the Actions cache and mirrored
-# to Cloud Storage as the durable copy — a cache eviction then costs one slow
-# run rather than the entire history.
-name: poll
+# Kept out of poll.yml so a slow scan can never delay the fast lane, which is
+# the part that decides how quickly a new filing reaches the site.
+name: daily
 
 on:
   schedule:
-    - cron: "*/10 10-23,0-2 * * 1-5"   # every 10 min across EDGAR hours (UTC)
+    - cron: "30 11 * * 1-5"           # 07:30 ET, after the prior session posts
   workflow_dispatch:
 
 concurrency:
-  group: poll            # never two cycles writing the same state at once
+  group: poll            # shares the fast lane's group: same state            # never two cycles writing the same state at once
   cancel-in-progress: false
 
 permissions:
@@ -22,7 +21,7 @@ permissions:
 jobs:
   cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -80,7 +79,6 @@ jobs:
         env:
           CHROME: /usr/bin/chromium-browser
           FORCE: "1"          # the workflow's own schedule is the hours guard
-          SKIP_DAILY: "1"     # heavy scans run in daily.yml, not here
         run: |
           git config user.name  "boatmaninlavik"
           git config user.email "zsean0539@gmail.com"

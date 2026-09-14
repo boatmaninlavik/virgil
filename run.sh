@@ -18,6 +18,10 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 eth=$(TZ=America/New_York date +%H)
 etd=$(TZ=America/New_York date +%u)
 FORCE="${FORCE:-0}"
+# The heavy daily work — market-wide scans, 13F, congress, prices — takes tens
+# of minutes and has no business blocking a ten-minute fast-lane cycle. Run it
+# on its own schedule and let the frequent cycle skip it.
+SKIP_DAILY="${SKIP_DAILY:-0}"
 if [[ "$FORCE" != "1" && ( $etd -gt 5 || $eth -lt 6 || $eth -ge 22 ) ]]; then
   echo "$(date -u +%FT%TZ) outside EDGAR hours (ET $eth:00, day $etd) - skipping poll"
   exit 0
@@ -37,7 +41,7 @@ $PY ingest/poll.py --limit 6 2>&1 | tail -3
 # user added, whose photo could not be fetched at the time. Bounded per run:
 # the fetcher is serial and memory-guarded, and commits each result, so a small
 # daily slice fills the gaps without ever loading the machine.
-if [[ $eth -ge 6 && ! -f "data/.faces-$(date +%F)" ]]; then
+if [[ "$SKIP_DAILY" != "1" && $eth -ge 6 && ! -f "data/.faces-$(date +%F)" ]]; then
   $PY ingest/photos.py >/dev/null 2>&1 || echo "wiki photo refresh failed (non-fatal)"
   $PY ingest/headshots.py --limit 12 >> data/market.log 2>&1 || \
     echo "headshot refresh failed (non-fatal)"
@@ -53,7 +57,7 @@ fi
 # assumes the machine is awake then; this laptop is usually asleep at 4am local,
 # so the price refresh had not run since August and the charts stopped there.
 # The marker makes it run whenever the machine next comes up.
-if [[ $eth -ge 7 && ! -f "data/.market-$(date +%F)" ]]; then
+if [[ "$SKIP_DAILY" != "1" && $eth -ge 7 && ! -f "data/.market-$(date +%F)" ]]; then
   touch "data/.market-$(date +%F)"
   rm -f data/.market-* 2>/dev/null; touch "data/.market-$(date +%F)"
   $PY ingest/market.py --days 3 >> data/market.log 2>&1 || echo "market scan failed (non-fatal)"
