@@ -23,9 +23,9 @@ echo "$(date -u +%FT%TZ) poll start"
 
 # Investors the user asked for from the page land in data/requests.json; pick
 # them up before polling so their filings are included in this same cycle.
-if [[ -s data/requests.json ]]; then
-  $PY ingest/add_entity.py 2>&1 | tail -3 || echo "add-entity skipped"
-fi
+# Runs unconditionally now: requests also arrive from the deployed site, which
+# queues them in a bucket rather than in this file.
+$PY ingest/add_entity.py 2>&1 | tail -3 || echo "add-entity skipped"
 
 $PY ingest/poll.py --limit 6 2>&1 | tail -3
 

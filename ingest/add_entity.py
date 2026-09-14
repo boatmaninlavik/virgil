@@ -21,6 +21,7 @@ import wikidata
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 QUEUE = os.path.join(DATA, "requests.json")
+REQ_BUCKET = os.environ.get("VIRGIL_REQ_BUCKET", "gs://virgil-requests")
 FUNDS = os.path.join(DATA, "funds.json")
 USEFUL = {"13F-HR", "13F-HR/A", "4", "4/A", "3", "5", "144",
           "SC 13D", "SC 13D/A", "SC 13G", "SC 13G/A"}
@@ -37,6 +38,43 @@ def save(path, obj, indent=1):
     tmp = path + ".tmp"
     json.dump(obj, open(tmp, "w"), indent=indent)
     os.replace(tmp, path)
+
+
+def drain_bucket():
+    """Pull requests the deployed site queued, and clear them.
+
+    On virgil.my the add button talks to a serverless function, which cannot
+    reach this machine — it writes one small object per request to a bucket
+    instead. Fold those into the same local queue so both paths converge here.
+    """
+    ls = subprocess.run(["gcloud", "storage", "ls", f"{REQ_BUCKET}/pending/"],
+                        capture_output=True, text=True, timeout=120)
+    paths = [l.strip() for l in ls.stdout.splitlines()
+             if l.strip().endswith(".json")]
+    if not paths:
+        return 0
+    q = load(QUEUE, [])
+    have = {r.get("cik") for r in q}
+    added = 0
+    for path in paths:
+        cat = subprocess.run(["gcloud", "storage", "cat", path],
+                             capture_output=True, text=True, timeout=120)
+        try:
+            rec = json.loads(cat.stdout)
+        except Exception:
+            continue
+        if rec.get("cik") and rec["cik"] not in have:
+            rec.setdefault("state", "pending")
+            q.append(rec)
+            have.add(rec["cik"])
+            added += 1
+        # Remove once it is in the local queue; a failed ingest stays visible
+        # there with its reason rather than being retried forever from here.
+        subprocess.run(["gcloud", "storage", "rm", path],
+                       capture_output=True, text=True, timeout=120)
+    if added:
+        save(QUEUE, q)
+    return added
 
 
 def profile(cik):
@@ -196,6 +234,12 @@ def add(req, funds):
 
 
 if __name__ == "__main__":
+    try:
+        n = drain_bucket()
+        if n:
+            print(f"{n} request(s) from the live site", flush=True)
+    except Exception as e:
+        print(f"could not read {REQ_BUCKET}: {type(e).__name__}", flush=True)
     q = load(QUEUE, [])
     pending = [r for r in q if r.get("state") == "pending"]
     if not pending:

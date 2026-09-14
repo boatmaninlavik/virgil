@@ -1793,14 +1793,16 @@ async function offerToAdd(q){
                                 label: card.dataset.name,
                                 person: card.dataset.cik === (al && al.cik)
                                         ? viaPerson : ""})});
-        const j = await r.json();
+        const j = await r.json().catch(() => ({}));
+        if(!r.ok || !j.status) throw new Error(j.error || `HTTP ${r.status}`);
         btn.textContent = j.status === "queued" ? "Added" : "Already added";
         sub.textContent = `${card.dataset.name} is being added. Fetching their ` +
           `filings, holdings and profile takes a few minutes — they will then ` +
           `appear in Discover and in any stock they have traded.`;
       }catch(e){
         btn.disabled = false; btn.textContent = "Add";
-        sub.textContent = "Could not reach the server. Is Virgil running locally?";
+        sub.textContent = "Could not queue that just now — the request did not " +
+          "go through. Try again in a moment.";
       }
     });
   });
