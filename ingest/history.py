@@ -63,7 +63,17 @@ def fund_history(cik, label, quarters=QUARTERS, verbose=True):
 
 
 if __name__ == "__main__":
+    import argparse
+    _ap = argparse.ArgumentParser()
+    _ap.add_argument("--only", help="a single CIK, for a freshly added fund")
+    _a = _ap.parse_args()
     funds = json.load(open(os.path.join(DATA, "funds.json")))
+    if _a.only:
+        # Backfilling ten quarters for every fund took 27 minutes. A new fund
+        # only needs its own, and the rest is already on disk.
+        _w = str(_a.only).zfill(10)
+        funds = {k: v for k, v in funds.items()
+                 if str(v.get("cik", "")).zfill(10) == _w}
     os.makedirs(OUT, exist_ok=True)
     t0 = time.time()
     index = {}
@@ -78,6 +88,13 @@ if __name__ == "__main__":
             }
         if i % 20 == 0:
             print(f"  {i}/{len(funds)}  {time.time()-t0:.0f}s", flush=True)
+    if _a.only:
+        try:
+            prior = json.load(open(os.path.join(DATA, "fund_history.json")))
+        except Exception:
+            prior = {}
+        prior.update(index)
+        index = prior
     json.dump(index, open(os.path.join(DATA, "fund_history.json"), "w"),
               separators=(",", ":"))
     depth = [len(v["series"]) for v in index.values()]

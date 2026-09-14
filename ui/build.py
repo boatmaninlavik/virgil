@@ -1895,11 +1895,18 @@ function formLabel(f){
 // 13F and fetches a logo, which takes minutes — so say what is happening, and
 // keep checking until the entity actually shows up rather than leaving the
 // reader to guess whether it worked.
-async function watchForEntity(name, cik, sub){
+async function watchForEntity(name, cik, sub, kicked){
   const started = Date.now();
   const say = t => { if(sub) sub.innerHTML = t; };
-  say(`<span class="spin"></span> Adding <b>${esc(name)}</b> — reading their
-       filings from EDGAR. This takes a few minutes.`);
+  // Be specific about the wait. "A few minutes" with no further word is what
+  // made this feel broken; the reader should know roughly how long, and see it
+  // counting.
+  say(kicked
+    ? `<span class="spin"></span> Adding <b>${esc(name)}</b> — reading their
+       filings from EDGAR. Usually about <b>3 minutes</b>; this page updates
+       itself when they land.`
+    : `<span class="spin"></span> <b>${esc(name)}</b> is queued. The poller
+       picks it up within 5 minutes, then takes about 3 more.`);
   for(let i = 0; i < 80; i++){
     await new Promise(r => setTimeout(r, 15000));
     try{
@@ -1916,8 +1923,9 @@ async function watchForEntity(name, cik, sub){
       }
     }catch(e){ /* keep waiting */ }
     const mins = Math.round((Date.now() - started) / 60000);
-    if(mins >= 2) say(`<span class="spin"></span> Still adding <b>${esc(name)}</b> —
-      pulling their holdings and building the page. ${mins} min so far.`);
+    if(mins >= 1) say(`<span class="spin"></span> Still adding <b>${esc(name)}</b> —
+      pulling their holdings and rebuilding the page. <b>${mins} min</b> so far,
+      usually about 3.`);
   }
   say(`<b>${esc(name)}</b> is queued but has not appeared yet. The poller runs
        every few minutes; they will show up on its next pass.`);
@@ -2002,7 +2010,7 @@ async function offerToAdd(q){
         const j = await r.json().catch(() => ({}));
         if(!r.ok || !j.status) throw new Error(j.error || `HTTP ${r.status}`);
         btn.textContent = j.status === "queued" ? "Added" : "Already added";
-        watchForEntity(card.dataset.name, card.dataset.cik, sub);
+        watchForEntity(card.dataset.name, card.dataset.cik, sub, j.started);
       }catch(e){
         btn.disabled = false; btn.textContent = "Add";
         sub.textContent = "Could not queue that just now — the request did not " +

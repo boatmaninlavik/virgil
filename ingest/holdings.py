@@ -100,8 +100,13 @@ def diff(cur, prev):
     return out
 
 
-def build(verbose=True):
+def build(verbose=True, only=None):
+    """only: a CIK. Adding one investor should not re-fetch 145 other funds."""
     funds = json.load(open(os.path.join(DATA, "funds.json")))
+    if only:
+        want = str(only).zfill(10)
+        funds = {k: v for k, v in funds.items()
+                 if str(v.get("cik", "")).zfill(10) == want}
     os.makedirs(HOLD, exist_ok=True)
     index = defaultdict(list)
     meta = {}
@@ -147,8 +152,12 @@ def build(verbose=True):
 
 
 if __name__ == "__main__":
+    import argparse
+    _ap = argparse.ArgumentParser()
+    _ap.add_argument("--only", help="a single CIK, for a freshly added fund")
+    _a = _ap.parse_args()
     t0 = time.time()
-    idx, meta = build()
+    idx, meta = build(only=_a.only)
     covered = sum(1 for m in meta.values() if m.get("periods"))
     print(f"\n{covered}/{len(meta)} funds with holdings; "
           f"{len(idx)} distinct securities indexed in {time.time()-t0:.0f}s")

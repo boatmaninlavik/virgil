@@ -284,12 +284,16 @@ if __name__ == "__main__":
 
     # Holdings and history only matter for 13F filers, and both are slow, so
     # run them once after the batch rather than per request.
-    if did13f:
-        for script in ("holdings.py", "history.py"):
-            path = os.path.join(ROOT, "ingest", script)
-            if os.path.exists(path):
-                subprocess.run([sys.executable, path], cwd=ROOT,
-                               capture_output=True, timeout=1800)
-        print("  holdings + history refreshed")
+    # Only the funds just added — rebuilding all 146 took tens of minutes and
+    # fetched nothing that had changed.
+    added_ciks = [r["cik"] for r in pending if r.get("state") == "added"]
+    if did13f and added_ciks:
+        for cik in added_ciks:
+            for script in ("holdings.py", "history.py"):
+                path = os.path.join(ROOT, "ingest", script)
+                if os.path.exists(path):
+                    subprocess.run([sys.executable, path, "--only", cik],
+                                   cwd=ROOT, capture_output=True, timeout=900)
+        print(f"  holdings + history fetched for {len(added_ciks)}", flush=True)
     print(f"\n{sum(1 for r in pending if r['state']=='added')} added, "
           f"{sum(1 for r in pending if r['state']=='no-filings')} with no filings")

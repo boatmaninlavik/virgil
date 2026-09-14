@@ -84,5 +84,28 @@ module.exports = async function handler(req, res) {
   } catch (e) {
     return res.status(502).json({ error: "could not queue", detail: String(e.message) });
   }
-  return res.status(200).json({ status: "queued", cik: record.cik });
+  // Kick the pipeline now rather than waiting for the next scheduled pass.
+  // The cron is the floor, not the path: without this an add waits up to five
+  // minutes before anything even starts looking at it.
+  let started = false;
+  const gh = process.env.GH_DISPATCH_TOKEN;
+  if (gh) {
+    try {
+      const d = await fetch(
+        "https://api.github.com/repos/boatmaninlavik/virgil/actions/workflows/poll.yml/dispatches",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${gh}`,
+            Accept: "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "virgil",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ ref: "main" }),
+        });
+      started = d.status === 204;
+    } catch (e) { /* the scheduled pass will still pick it up */ }
+  }
+  return res.status(200).json({ status: "queued", cik: record.cik, started });
 };
