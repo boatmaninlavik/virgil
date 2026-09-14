@@ -33,18 +33,23 @@ $PY ingest/poll.py --limit 6 2>&1 | tail -3
 # user added, whose photo could not be fetched at the time. Bounded per run:
 # the fetcher is serial and memory-guarded, and commits each result, so a small
 # daily slice fills the gaps without ever loading the machine.
-if [[ "$eth" == "06" ]]; then
+if [[ $eth -ge 6 && ! -f "data/.faces-$(date +%F)" ]]; then
   $PY ingest/photos.py >/dev/null 2>&1 || echo "wiki photo refresh failed (non-fatal)"
   $PY ingest/headshots.py --limit 12 >> data/market.log 2>&1 || \
     echo "headshot refresh failed (non-fatal)"
   $PY ingest/fill_logos.py >> data/market.log 2>&1 || \
     echo "logo refresh failed (non-fatal)"
+  rm -f data/.faces-* 2>/dev/null; touch "data/.faces-$(date +%F)"
 fi
 
 # Market-wide cluster scan is ~1,200-2,000 filings per trading day, so it runs
 # once daily rather than every cycle. 07:xx ET picks up the prior session,
 # whose daily index is published after the close.
-if [[ "$eth" == "07" && ! -f "data/.market-$(date +%F)" ]]; then
+# Once a day, the first cycle after 07:00 ET — not *at* 07:00. A fixed hour
+# assumes the machine is awake then; this laptop is usually asleep at 4am local,
+# so the price refresh had not run since August and the charts stopped there.
+# The marker makes it run whenever the machine next comes up.
+if [[ $eth -ge 7 && ! -f "data/.market-$(date +%F)" ]]; then
   touch "data/.market-$(date +%F)"
   rm -f data/.market-* 2>/dev/null; touch "data/.market-$(date +%F)"
   $PY ingest/market.py --days 3 >> data/market.log 2>&1 || echo "market scan failed (non-fatal)"
@@ -57,16 +62,15 @@ if [[ "$eth" == "07" && ! -f "data/.market-$(date +%F)" ]]; then
   # House PTRs: new filings appear daily; parsed PDFs are cached by doc id
   $PY ingest/congress.py --years "$(date +%Y)" >> data/market.log 2>&1 || \
     echo "congress refresh failed (non-fatal)"
-fi
-
-# Incremental price update once per day. Metered API, so it is ceiling-guarded
-# and only ever buys bars it does not already hold ($0.0019 a day, not $0.93).
-if [[ $((10#$(date +%M))) -lt 2 && "$eth" == "07" ]]; then
+  # Incremental price update. Metered API, so it is ceiling-guarded and only
+  # ever buys bars it does not already hold ($0.0019 a day, not $0.93).
   $PY ingest/daily_prices.py >> data/market.log 2>&1 || echo "price update skipped"
   # Databento bars are raw prints, so a split draws a cliff that never happened
   # - CVNA showed an 80% overnight crash. Re-check against adjusted closes.
   $PY ingest/splits.py >> data/market.log 2>&1 || echo "split check skipped"
 fi
+
+
 
 # Per-ticker rescoring refresh hourly (prices.py caches for 6h); re-scoring the indexed
 # tickers is cheap and keeps the "since those trades" numbers honest.
