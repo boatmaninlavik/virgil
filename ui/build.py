@@ -256,6 +256,7 @@ nav{display:flex;gap:7px;padding-bottom:20px;flex-wrap:wrap;align-items:center}
 .who-tbl tr:last-child td{border-bottom:none}
 .role{font-size:11.5px;color:var(--ink-3)}
 .chartwrap{margin:14px 0 4px}
+.sincelab{font-size:11.5px;color:var(--ink-3);font-weight:400;margin-left:2px}
 .spin{display:inline-block;width:11px;height:11px;margin-right:6px;
   border:2px solid var(--rule);border-top-color:var(--ink-2);border-radius:50%;
   vertical-align:-1px;animation:spin .9s linear infinite}
@@ -800,9 +801,18 @@ function drawChart(wrap){
     // a fund's book is billions; a share price is dollars
     const val = wrap.dataset.mode === "quarterly"
       ? fmtUSD(d[1]) : (d[1] == null ? "—" : "$" + d[1].toFixed(2));
+    // Say what the percentage is measured against. Unlabelled beside a date it
+    // reads as that day's move: ISRG closed 377.16 on 15 Sep, barely changed on
+    // the day, and the bare "-4.4%" made a correct price look wrong.
+    const span = intraday ? "today"
+      : (wrap.querySelector(".rbtn.on")?.textContent || "").trim();
+    const since = span === "today" ? "today"
+                : (span && span !== "All") ? `vs ${span} ago`
+                : (data[0] ? `since ${data[0][0]}` : "");
     rp.innerHTML = ch == null ? val
       : `${val} <span style="color:${ch>=0?"var(--buy)":"var(--sell)"};
-      font-weight:500">${ch>=0?"+":""}${ch.toFixed(1)}%</span>`;
+      font-weight:500">${ch>=0?"+":""}${ch.toFixed(1)}%</span>` +
+      (since ? ` <span class="sincelab">${esc(since)}</span>` : "");
   };
   show(data.length - 1);
   const move = ev => {

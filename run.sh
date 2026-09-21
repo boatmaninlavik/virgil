@@ -43,9 +43,9 @@ $PY ingest/poll.py --limit 6 2>&1 | tail -3
 # daily slice fills the gaps without ever loading the machine.
 if [[ "$SKIP_DAILY" != "1" && $eth -ge 6 && ! -f "data/.faces-$(date +%F)" ]]; then
   $PY ingest/photos.py >/dev/null 2>&1 || echo "wiki photo refresh failed (non-fatal)"
-  $PY ingest/headshots.py --limit 12 >> data/market.log 2>&1 || \
+  $PY ingest/headshots.py --limit 12 2>&1 | tail -3 || \
     echo "headshot refresh failed (non-fatal)"
-  $PY ingest/fill_logos.py >> data/market.log 2>&1 || \
+  $PY ingest/fill_logos.py 2>&1 | tail -3 || \
     echo "logo refresh failed (non-fatal)"
   rm -f data/.faces-* 2>/dev/null; touch "data/.faces-$(date +%F)"
 fi
@@ -60,22 +60,22 @@ fi
 if [[ "$SKIP_DAILY" != "1" && $eth -ge 7 && ! -f "data/.market-$(date +%F)" ]]; then
   touch "data/.market-$(date +%F)"
   rm -f data/.market-* 2>/dev/null; touch "data/.market-$(date +%F)"
-  $PY ingest/market.py --days 3 >> data/market.log 2>&1 || echo "market scan failed (non-fatal)"
+  $PY ingest/market.py --days 3 2>&1 | tail -3 || echo "market scan failed (non-fatal)"
   # Was never scheduled — the per-stock index was only ever built by hand and
   # had drifted two days stale. It backfills whatever the live lane missed.
-  $PY ingest/insiders_by_ticker.py --days 4 >> data/market.log 2>&1 || \
+  $PY ingest/insiders_by_ticker.py --days 4 2>&1 | tail -3 || \
     echo "ticker index refresh failed (non-fatal)"
   # 13F is quarterly; a daily refresh is already far more often than it changes
-  $PY ingest/holdings.py >> data/market.log 2>&1 || echo "13F refresh failed (non-fatal)"
+  $PY ingest/holdings.py 2>&1 | tail -3 || echo "13F refresh failed (non-fatal)"
   # House PTRs: new filings appear daily; parsed PDFs are cached by doc id
-  $PY ingest/congress.py --years "$(date +%Y)" >> data/market.log 2>&1 || \
+  $PY ingest/congress.py --years "$(date +%Y)" 2>&1 | tail -3 || \
     echo "congress refresh failed (non-fatal)"
   # Incremental price update. Metered API, so it is ceiling-guarded and only
   # ever buys bars it does not already hold ($0.0019 a day, not $0.93).
-  $PY ingest/daily_prices.py >> data/market.log 2>&1 || echo "price update skipped"
+  $PY ingest/daily_prices.py 2>&1 | tail -3 || echo "price update skipped"
   # Databento bars are raw prints, so a split draws a cliff that never happened
   # - CVNA showed an 80% overnight crash. Re-check against adjusted closes.
-  $PY ingest/splits.py >> data/market.log 2>&1 || echo "split check skipped"
+  $PY ingest/splits.py 2>&1 | tail -3 || echo "split check skipped"
 fi
 
 
@@ -99,7 +99,7 @@ $PY ingest/live_f4.py 2>&1 | tail -1 || echo "live lane skipped"
 # Live quotes are free and keyless, so they refresh every cycle during market
 # hours; the metered Databento call stays on its once-a-day schedule.
 if [[ $((10#$(date +%M))) -lt 3 ]]; then
-  $PY ingest/live_quotes.py >> data/market.log 2>&1 || echo "quotes skipped"
+  $PY ingest/live_quotes.py 2>&1 | tail -3 || echo "quotes skipped"
 fi
 
 $PY ui/build.py
