@@ -55,8 +55,11 @@ jobs:
           key: virgil-state-${{ github.run_id }}
           restore-keys: virgil-state-
 
-      - name: Seed from Cloud Storage if the cache was empty
-        if: steps.cache.outputs.cache-matched-key == ''
+      # The bucket is the source of truth, always — not only on a cache miss.
+      # The cache is just a local accelerator, and a stale one was being
+      # mirrored back over newer state: funds that had already been added
+      # silently disappeared again on the next cycle.
+      - name: Take authoritative state from Cloud Storage
         run: |
           mkdir -p data
           gcloud storage rsync -r gs://virgil-edgar/state data --quiet
