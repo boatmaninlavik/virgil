@@ -68,7 +68,13 @@ jobs:
       - name: Take authoritative state from Cloud Storage
         run: |
           mkdir -p data
+          rm -f data/.state_authoritative
           gcloud storage rsync -r gs://virgil-edgar/state data --quiet
+          # Only a run that provably holds current state may write it back. If
+          # this restore fails, whatever the cache happened to contain must not
+          # be mirrored over the good copy — that is how added funds were being
+          # silently un-added.
+          touch data/.state_authoritative
 
       - name: Credentials
         run: |
@@ -100,8 +106,11 @@ jobs:
       - name: Mirror state to Cloud Storage
         if: always()
         run: |
-          # A run that failed before restoring state has nothing to mirror, and
-          # rsync from a missing directory turned one failure into two.
+          # Refuse to write back state this run did not verifiably start from.
+          # Losing a cycle costs minutes; overwriting the bucket with a stale
+          # copy costs whatever was added in between, silently.
           [ -d data ] || { echo "no working set to mirror"; exit 0; }
+          [ -f data/.state_authoritative ] || {
+            echo "state was never confirmed current — refusing to mirror"; exit 0; }
           gcloud storage rsync -r -x '.*\.(log|tmp)$' data \
             gs://virgil-edgar/state --quiet

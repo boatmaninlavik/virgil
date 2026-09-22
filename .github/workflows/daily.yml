@@ -62,7 +62,14 @@ jobs:
       - name: Take authoritative state from Cloud Storage
         run: |
           mkdir -p data
+          rm -f data/.state_authoritative
           gcloud storage rsync -r gs://virgil-edgar/state data --quiet
+          touch data/.state_authoritative
+          # Only a run that provably holds current state may write it back. If
+          # this restore fails, whatever the cache happened to contain must not
+          # be mirrored over the good copy — that is how added funds were being
+          # silently un-added.
+          touch data/.state_authoritative
 
       - name: Credentials
         run: |
