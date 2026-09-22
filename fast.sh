@@ -50,7 +50,7 @@ $PY ui/build.py --live-only
 
 # Only the blocks readers actually poll. The heavy per-fund and per-ticker files
 # change on the daily cycle, not this one.
-gcloud storage cp -Z ui/data/live.json ui/data/live-meta.json \
+gcloud storage cp -Z ui/data/live.json ui/data/live-meta.json ui/data/tracked.json \
   "$WEB_BUCKET/data/" --content-type=application/json \
   --cache-control="no-cache, max-age=0, must-revalidate" --quiet
 echo "$(date -u +%FT%TZ) published live data"

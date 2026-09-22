@@ -1921,13 +1921,15 @@ async function watchForEntity(name, cik, sub, kicked){
     await new Promise(r => setTimeout(r, 15000));
     try{
       const base = DATA_BASE || "";
-      const r = await fetch(`${base}data/live-meta.json?t=${Date.now()}`,
+      const r = await fetch(`${base}data/tracked.json?t=${Date.now()}`,
                             {cache: "no-store"});
       if(r.ok){
-        const m = await r.json();
-        if(m.built && m.built !== (META.generated || "")){
-          say(`<b>${esc(name)}</b> is on Virgil now — reload to see them in
-               Discover and on any stock they have traded.`);
+        const t = await r.json();
+        const label = t[String(cik).padStart(10, "0")];
+        if(label){
+          say(`<b>${esc(label)}</b> is on Virgil now.
+               <button class="fbtn" style="margin-left:8px"
+                 onclick="location.reload()">Reload</button>`);
           return;
         }
       }
@@ -1937,8 +1939,9 @@ async function watchForEntity(name, cik, sub, kicked){
       pulling their holdings and rebuilding the page. <b>${mins} min</b> so far,
       usually about 3.`);
   }
-  say(`<b>${esc(name)}</b> is queued but has not appeared yet. The poller runs
-       every few minutes; they will show up on its next pass.`);
+  say(`<b>${esc(name)}</b> has not appeared. Either the ingest is still running
+       or it failed — nothing was added. Search them again in a few minutes;
+       if they still are not here, they may file nothing we can read.`);
 }
 
 async function offerToAdd(q){
@@ -2364,6 +2367,22 @@ document.addEventListener("visibilitychange", () => {
 """
 
 
+def _tracked(side):
+    """Which CIKs are tracked, for the page to poll after an add.
+
+    The page used to call an add finished the moment the site's build stamp
+    moved, which it does every cycle regardless — so it announced success in
+    fifteen seconds whether or not the entity had been ingested.
+    """
+    out = {}
+    for label, f in (load("funds.json", {}) or {}).items():
+        cik = str(f.get("cik") or "").zfill(10)
+        if cik:
+            out[cik] = label
+    json.dump(out, open(os.path.join(side, "tracked.json"), "w"),
+              separators=(",", ":"))
+
+
 def build(interval_label="60s", reload_seconds=60, data_only=False,
           live_only=False):
     events = load("events.json", [])
@@ -2469,6 +2488,7 @@ def build(interval_label="60s", reload_seconds=60, data_only=False,
         json.dump({"built": built, "events": len(events)},
                   open(os.path.join(side, "live-meta.json"), "w"),
                   separators=(",", ":"))
+        _tracked(side)
         return None, {"events": len(events), "hash": "live"}
     firm_logos = load("firm_logos.json", {})
     fund_logos = load("fund_logos.json", {})
@@ -2695,6 +2715,8 @@ def build(interval_label="60s", reload_seconds=60, data_only=False,
             os.symlink(_px, _link)
         except OSError:
             pass
+
+    _tracked(side)
 
     # the page fetches this at search time to map a person to their fund
     _al = load("aliases.json", {})
