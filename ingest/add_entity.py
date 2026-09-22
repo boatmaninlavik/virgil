@@ -65,13 +65,10 @@ def drain_bucket():
             continue
         if rec.get("cik") and rec["cik"] not in have:
             rec.setdefault("state", "pending")
+            rec["_src"] = path
             q.append(rec)
             have.add(rec["cik"])
             added += 1
-        # Remove once it is in the local queue; a failed ingest stays visible
-        # there with its reason rather than being retried forever from here.
-        subprocess.run(["gcloud", "storage", "rm", path],
-                       capture_output=True, text=True, timeout=120)
     if added:
         save(QUEUE, q)
     return added
@@ -271,6 +268,18 @@ if __name__ == "__main__":
                 did13f = True
 
     save(FUNDS, funds)
+    save(QUEUE, q)
+
+    # Retire the bucket copy only now that the outcome is written. Deleting it
+    # on read meant a run that was cancelled or died in between lost the
+    # request from the bucket and from the queue both — the entity was simply
+    # gone, with the site still reporting it had been added.
+    for r in pending:
+        src = r.pop("_src", None)
+        if src and r.get("state") in ("added", "already-tracked", "no-filings"):
+            subprocess.run(["gcloud", "storage", "mv", src,
+                            src.replace("/pending/", "/done/")],
+                           capture_output=True, text=True, timeout=120)
     save(QUEUE, q)
 
     # A new investor changes funds.json, people.json and the holdings tree —
